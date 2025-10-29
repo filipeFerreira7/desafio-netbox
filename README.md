@@ -49,3 +49,7 @@ Para executar a aplicação localmente:
 
 -- *mvn spring-boot:run*
 
+## Testando endpoints `api/v1/discover`
+Pode ser testado de algumas formas, porém as mais recomendadas são:
+- Postman `{ "start_address": "192.168.1.1", "end_address": "192.168.1.2"} `
+- Swagger **http://localhost:8080/swagger-ui/index.html#**
