@@ -1,2 +1,97 @@
-version: "3.8"
-services: {}
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: netbox-postgres
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: netbox
+      POSTGRES_USER: netbox
+      POSTGRES_PASSWORD: netbox_password_123
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U netbox -d netbox" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: netbox-redis
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  netbox:
+    image: netboxcommunity/netbox:latest
+    container_name: netbox
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - netbox.env
+    volumes:
+      - netbox-media:/etc/netbox-ng/media
+      - netbox-static:/opt/netbox/netbox/static
+    ports:
+      - "8085:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/status/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  netbox-worker:
+    image: netboxcommunity/netbox:latest
+    container_name: netbox-worker
+    depends_on:
+      netbox:
+        condition: service_healthy
+    env_file:
+      - netbox.env
+    command: ["php", "/opt/netbox/netbox/manage.py", "rqworker"]
+    restart: unless-stopped
+
+  netbox-housekeeping:
+    image: netboxcommunity/netbox:latest
+    container_name: netbox-housekeeping
+    depends_on:
+      netbox:
+        condition: service_healthy
+    env_file:
+      - netbox.env
+    command: ["/opt/netbox/housekeeping.sh"]
+    entrypoint: ["/bin/bash", "-c"]
+    restart: on-failure
+
+  your-api:
+    build: .
+    container_name: descobre-ip-api
+    depends_on:
+      netbox:
+        condition: service_healthy
+    environment:
+      - NETBOX_URL=http://netbox:8080
+      - NETBOX_TOKEN=${SUPERUSER_API_TOKEN}
+      - NETBOX_VERIFY_SSL=false
+    ports:
+      - "8081:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  redis-data:
+  netbox-media:
+  netbox-static:

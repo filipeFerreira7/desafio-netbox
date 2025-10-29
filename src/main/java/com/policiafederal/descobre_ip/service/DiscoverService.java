@@ -3,8 +3,8 @@ package com.policiafederal.descobre_ip.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.policiafederal.descobre_ip.dto.DiscoverDtoRequest;
 import com.policiafederal.descobre_ip.dto.SnmpDeviceDto;
-import com.policiafederal.descobre_ip.dto.SnmpInterfaceDto;
-import org.apache.coyote.BadRequestException;
+import com.policiafederal.descobre_ip.dto.SnmpInterfaceDto;;
+import com.policiafederal.descobre_ip.infra.exception.RangeIpException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
@@ -23,20 +23,26 @@ public class DiscoverService {
     @Autowired
     private final SnmpService snmpService;
     @Autowired
-    private final NetboxClientService netboxClientService;
+    private final IpAddressService ipAddressService;
+
+    @Autowired
+    private final InterfaceService interfaceService;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
+    @Autowired
+    private DeviceService deviceService;
 
 
-    public DiscoverService(SnmpService snmpService, NetboxClientService netboxClientService) {
+    public DiscoverService(SnmpService snmpService, IpAddressService ipAddressService, InterfaceService interfaceService) {
         this.snmpService = snmpService;
-        this.netboxClientService = netboxClientService;
+        this.ipAddressService = ipAddressService;
+        this.interfaceService = interfaceService;
     }
 
     public Mono<List<String>> processarFaixa(DiscoverDtoRequest request) {
         return Mono.fromCallable(() -> gerarRangeIps(request.start_address(), request.end_address()))
                 .flatMapMany(Flux::fromIterable)
-                .flatMap(ip -> Mono.fromCallable(() -> snmpService.getStaticData())
+                .flatMap(ip -> Mono.fromCallable(snmpService::getStaticData)
                         .map(data -> (Map<String, Object>) data.get(ip))
                         .filter(Objects::nonNull)
                         .map(deviceData -> {
@@ -57,12 +63,12 @@ public class DiscoverService {
                                     interfaces
                             );
                         })
-                        .flatMap(device -> netboxClientService.createOrUpdateDevice(device)
+                        .flatMap(device -> deviceService.createOrUpdateDevice(device)
                                 .flatMap(deviceMsg -> Flux.fromIterable(device.interfaces())
-                                        .flatMap(iface -> netboxClientService.createOrUpdateInterface(device.sysName(), iface)
+                                        .flatMap(iface -> interfaceService.createOrUpdateInterface(device.sysName(), iface)
                                                 .flatMap(ifaceMsg -> {
                                                     if (iface.ipAddress() != null && !iface.ipAddress().equals("null")) {
-                                                        return netboxClientService.createOrUpdateIpAddress(iface.ifDescr(), iface.ipAddress(), iface.ipNetmask())
+                                                        return ipAddressService.createOrUpdateIpAddress(iface.ifDescr(), iface.ipAddress(), iface.ipNetmask())
                                                                 .map(ipMsg -> deviceMsg + " | " + ifaceMsg + " | " + ipMsg);
                                                     }
                                                     return Mono.just(deviceMsg + " | " + ifaceMsg + " | IP ignorado");
@@ -88,7 +94,7 @@ public class DiscoverService {
                 lista.add(longParaIp(i));
             }
         } catch (Exception e) {
-            throw new RuntimeException("Erro ao gerar faixa de IPS" + e.getMessage());
+            throw new RangeIpException("Erro ao gerar faixa de IP: " + e.getMessage());
         }
         return lista;
     }
@@ -98,7 +104,7 @@ public class DiscoverService {
         return Integer.toUnsignedLong(bb.getInt());
     }
 
-    private String longParaIp(long valor) throws Exception {
+    private String longParaIp(long valor) {
         return String.format("%d.%d.%d.%d",
                 (valor >> 24) & 0xFF,
                 (valor >> 16) & 0xFF,
