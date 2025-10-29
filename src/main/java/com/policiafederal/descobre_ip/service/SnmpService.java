@@ -14,8 +14,11 @@ public class SnmpService {
     public Map<String, Object> getStaticData() throws IOException {
         ClassPathResource staticDataResource = new ClassPathResource("simulated_snmp_data.json");
         String dataString = IOUtils.toString(staticDataResource.getInputStream(), StandardCharsets.UTF_8);
-        var obj = new JSONObject(dataString).toMap();
+
+       var obj = new JSONObject(dataString).toMap();
         System.out.println(obj);
-        return obj;
+       return obj;
+
+
     }
 }
